@@ -440,6 +440,8 @@ public class ScheduledMessageConsumer {
    public static void main(String[] args) throws Exception {
       // 实例化消费者
       DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("ExampleConsumer");
+      // 设置NameServer的地址
+      consumer.setNamesrvAddr("localhost:9876");
       // 订阅Topics
       consumer.subscribe("TestTopic", "*");
       // 注册消息监听者
@@ -471,6 +473,8 @@ public class ScheduledMessageProducer {
    public static void main(String[] args) throws Exception {
       // 实例化一个生产者来产生延时消息
       DefaultMQProducer producer = new DefaultMQProducer("ExampleProducerGroup");
+      // 设置NameServer的地址
+      producer.setNamesrvAddr("localhost:9876");
       // 启动生产者
       producer.start();
       int totalMessagesToSend = 100;
@@ -541,10 +545,12 @@ public class ListSplitter implements Iterator<List<Message>> {
     public ListSplitter(List<Message> messages) { 
         this.messages = messages;
     }
-    @Override public boolean hasNext() {
+    @Override 
+    public boolean hasNext() {
         return currIndex < messages.size(); 
     }
-    @Override public List<Message> next() { 
+    @Override 
+    public List<Message> next() { 
         int startIndex = getStartIndex();
         int nextIndex = startIndex;
         int totalSize = 0;
@@ -566,7 +572,7 @@ public class ListSplitter implements Iterator<List<Message>> {
         int tmpSize = calcMessageSize(currMessage); 
         while(tmpSize > SIZE_LIMIT) {
             currIndex += 1;
-            Message message = messages.get(curIndex); 
+            Message message = messages.get(currIndex); 
             tmpSize = calcMessageSize(message);
         }
         return currIndex; 
@@ -639,7 +645,7 @@ RocketMQ只定义了一些基本语法来支持这个特性。你也可以很容
 
 只有使用push模式的消费者才能用使用SQL92标准的sql语句，接口如下：
 ```
-public void subscribe(finalString topic, final MessageSelector messageSelector)
+public void subscribe(final String topic, final MessageSelector messageSelector)
 ```
 
 ### 5.2 使用样例
@@ -779,7 +785,7 @@ public class TransactionListenerImpl implements TransactionListener {
 3. 事务消息将在 Broker 配置文件中的参数 transactionTimeout 这样的特定时间长度之后被检查。当发送事务消息时，用户还可以通过设置用户属性 CHECK_IMMUNITY_TIME_IN_SECONDS 来改变这个限制，该参数优先于 `transactionTimeout` 参数。
 4. 事务性消息可能不止一次被检查或消费。
 5. 提交给用户的目标主题消息可能会失败，目前这依日志的记录而定。它的高可用性通过 RocketMQ 本身的高可用性机制来保证，如果希望确保事务消息不丢失、并且事务完整性得到保证，建议使用同步的双重写入机制。
-6. 事务消息的生产者 ID 不能与其他类型消息的生产者 ID 共享。与其他类型的消息不同，事务消息允许反向查询、MQ服务器能通过它们的生产者 ID 查询到消费者。
+6. 事务消息的生产者 GroupName 不能与其他类型消息的生产者 GroupName 共享。与其他类型的消息不同，事务消息允许反向查询、MQ服务器能通过它们的生产者 GroupName 查询到生产者。
 
 7 Logappender样例
 -----------------
@@ -861,50 +867,52 @@ import io.openmessaging.MessagingAccessPoint;
 import io.openmessaging.OMS;
 import io.openmessaging.producer.Producer;
 import io.openmessaging.producer.SendResult;
+
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 
 public class SimpleProducer {
     public static void main(String[] args) {
-       final MessagingAccessPoint messagingAccessPoint =
-           OMS.getMessagingAccessPoint("oms:rocketmq://localhost:9876/default:default");
-       final Producer producer = messagingAccessPoint.createProducer();
-       messagingAccessPoint.startup();
-       System.out.printf("MessagingAccessPoint startup OK%n");
-       producer.startup();
-       System.out.printf("Producer startup OK%n");
-       {
-           Message message = producer.createBytesMessage("OMS_HELLO_TOPIC", "OMS_HELLO_BODY".getBytes(Charset.forName("UTF-8")));
-           SendResult sendResult = producer.send(message);
-           //final Void aVoid = result.get(3000L);
-           System.out.printf("Send async message OK, msgId: %s%n", sendResult.messageId());
-       }
-       final CountDownLatch countDownLatch = new CountDownLatch(1);
-       {
-           final Future<SendResult> result = producer.sendAsync(producer.createBytesMessage("OMS_HELLO_TOPIC", "OMS_HELLO_BODY".getBytes(Charset.forName("UTF-8"))));
-           result.addListener(new FutureListener<SendResult>() {
-               @Override
-               public void operationComplete(Future<SendResult> future) {
-                   if (future.getThrowable() != null) {
-                       System.out.printf("Send async message Failed, error: %s%n", future.getThrowable().getMessage());
-                   } else {
-                       System.out.printf("Send async message OK, msgId: %s%n", future.get().messageId());
-                   }
-                   countDownLatch.countDown();
-               }
-           });
-       }
-       {
-           producer.sendOneway(producer.createBytesMessage("OMS_HELLO_TOPIC", "OMS_HELLO_BODY".getBytes(Charset.forName("UTF-8"))));
-           System.out.printf("Send oneway message OK%n");
-       }
-       try {
-           countDownLatch.await();
-           Thread.sleep(500); // 等一些时间来发送消息
-       } catch (InterruptedException ignore) {
-       }
-       producer.shutdown();
-   }
+        final MessagingAccessPoint messagingAccessPoint =
+                OMS.getMessagingAccessPoint("oms:rocketmq://localhost:9876/default:default");
+        final Producer producer = messagingAccessPoint.createProducer();
+        messagingAccessPoint.startup();
+        System.out.printf("MessagingAccessPoint startup OK%n");
+        producer.startup();
+        System.out.printf("Producer startup OK%n");
+        {
+            Message message = producer.createBytesMessage("OMS_HELLO_TOPIC", "OMS_HELLO_BODY".getBytes(StandardCharsets.UTF_8));
+            SendResult sendResult = producer.send(message);
+            //final Void aVoid = result.get(3000L);
+            System.out.printf("Send async message OK, msgId: %s%n", sendResult.messageId());
+        }
+        final CountDownLatch countDownLatch = new CountDownLatch(1);
+        {
+            final Future<SendResult> result = producer.sendAsync(producer.createBytesMessage("OMS_HELLO_TOPIC", "OMS_HELLO_BODY".getBytes(StandardCharsets.UTF_8)));
+            result.addListener(new FutureListener<SendResult>() {
+                @Override
+                public void operationComplete(Future<SendResult> future) {
+                    if (future.getThrowable() != null) {
+                        System.out.printf("Send async message Failed, error: %s%n", future.getThrowable().getMessage());
+                    } else {
+                        System.out.printf("Send async message OK, msgId: %s%n", future.get().messageId());
+                    }
+                    countDownLatch.countDown();
+                }
+            });
+        }
+        {
+            producer.sendOneway(producer.createBytesMessage("OMS_HELLO_TOPIC", "OMS_HELLO_BODY".getBytes(StandardCharsets.UTF_8)));
+            System.out.printf("Send oneway message OK%n");
+        }
+        try {
+            countDownLatch.await();
+            Thread.sleep(500); // 等一些时间来发送消息
+        } catch (InterruptedException ignore) {
+        }
+        producer.shutdown();
+    }
 }
 ```
 

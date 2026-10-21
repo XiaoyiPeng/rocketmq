@@ -17,6 +17,7 @@
 package org.apache.rocketmq.broker.offset;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,6 +28,10 @@ import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
 public class LmqConsumerOffsetManager extends ConsumerOffsetManager {
     private ConcurrentHashMap<String, Long> lmqOffsetTable = new ConcurrentHashMap<>(512);
+
+    public LmqConsumerOffsetManager() {
+
+    }
 
     public LmqConsumerOffsetManager(BrokerController brokerController) {
         super(brokerController);
@@ -88,7 +93,7 @@ public class LmqConsumerOffsetManager extends ConsumerOffsetManager {
         if (jsonString != null) {
             LmqConsumerOffsetManager obj = RemotingSerializable.fromJson(jsonString, LmqConsumerOffsetManager.class);
             if (obj != null) {
-                super.offsetTable = obj.offsetTable;
+                super.setOffsetTable(obj.getOffsetTable());
                 this.lmqOffsetTable = obj.lmqOffsetTable;
             }
         }
@@ -105,5 +110,26 @@ public class LmqConsumerOffsetManager extends ConsumerOffsetManager {
 
     public void setLmqOffsetTable(ConcurrentHashMap<String, Long> lmqOffsetTable) {
         this.lmqOffsetTable = lmqOffsetTable;
+    }
+
+    @Override
+    public void removeOffset(String group) {
+        if (!MixAll.isLmq(group)) {
+            super.removeOffset(group);
+            return;
+        }
+        Iterator<Map.Entry<String, Long>> it = this.lmqOffsetTable.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, Long> next = it.next();
+            String topicAtGroup = next.getKey();
+            if (topicAtGroup.contains(group)) {
+                String[] arrays = topicAtGroup.split(TOPIC_GROUP_SEPARATOR);
+                if (arrays.length == 2 && group.equals(arrays[1])) {
+                    it.remove();
+                    removeConsumerOffset(topicAtGroup);
+                    LOG.warn("clean lmq group offset {}", topicAtGroup);
+                }
+            }
+        }
     }
 }
